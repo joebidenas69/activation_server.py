@@ -3,6 +3,7 @@ import json
 import os
 import hashlib
 import uuid
+import time
 
 app = Flask(__name__)
 
@@ -37,19 +38,31 @@ def is_key_valid(key, hwid):
 
     if key not in keys:
         return False, "Key does not exist"
-    
-    if keys[key] == "used":
+
+    # Support old format: "used" or "unused"
+    if isinstance(keys[key], str):
+        key_data = {"status": keys[key], "expires": None}
+    else:
+        key_data = keys[key]
+
+    # NEW: Expiration check
+    if key_data.get("expires") and time.time() > key_data["expires"]:
+        return False, "Key expired"
+
+    if key_data["status"] == "used":
         return False, "Key already used"
 
-    # Optional: check if hwid already bound
     if key in hwids:
         return False, "Key already activated on another machine"
 
     # Mark key as used
-    keys[key] = "used"
+    key_data["status"] = "used"
+    keys[key] = key_data
     hwids[key] = hwid
+
     save_keys(keys)
     save_hwids(hwids)
+
     return True, "Key activated successfully"
 
 # ---------------- Routes ----------------
@@ -71,21 +84,26 @@ def activate():
 # ---------------- Admin Endpoint to Add Keys ----------------
 @app.route("/add_key", methods=["POST"])
 def add_key():
-    # This is optional; you can protect with a simple password if desired
     data = request.get_json()
     if not data or "key" not in data:
         return jsonify({"error": "Missing key"}), 400
 
     key = data["key"].strip()
     keys = load_keys()
+
     if key in keys:
         return jsonify({"error": "Key already exists"}), 400
 
-    keys[key] = "unused"
+    # NEW: Add expiration if temporary
+    if data.get("temporary"):
+        expires = int(time.time()) + 1800  # 30 min
+        keys[key] = {"status": "unused", "expires": expires}
+    else:
+        keys[key] = {"status": "unused", "expires": None}
+
     save_keys(keys)
     return jsonify({"success": True, "message": f"Key {key} added"}), 200
 
 # ---------------- Run Server ----------------
 if __name__ == "__main__":
-    # For local testing only. On Render, use gunicorn
     app.run(host="0.0.0.0", port=10000)
