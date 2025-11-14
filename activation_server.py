@@ -1,8 +1,6 @@
 from flask import Flask, request, jsonify
 import json
 import os
-import hashlib
-import uuid
 import time
 
 app = Flask(__name__)
@@ -39,15 +37,19 @@ def is_key_valid(key, hwid):
     if key not in keys:
         return False, "Key does not exist"
 
-    # Support old format: "used" or "unused"
-    if isinstance(keys[key], str):
-        key_data = {"status": keys[key], "expires": None}
-    else:
-        key_data = keys[key]
+    raw_data = keys[key]
 
-    # NEW: Expiration check
-    if key_data.get("expires") and time.time() > key_data["expires"]:
-        return False, "Key expired"
+    # Backwards compatibility:
+    # Old format: "unused" or "used"
+    if isinstance(raw_data, str):
+        key_data = {"status": raw_data, "expires": None}
+    else:
+        key_data = raw_data
+
+    # -------- Expiration Check (NEW) --------
+    if key_data.get("expires"):
+        if time.time() > key_data["expires"]:
+            return False, "Key expired"
 
     if key_data["status"] == "used":
         return False, "Key already used"
@@ -55,14 +57,13 @@ def is_key_valid(key, hwid):
     if key in hwids:
         return False, "Key already activated on another machine"
 
-    # Mark key as used
+    # Mark key as used now
     key_data["status"] = "used"
     keys[key] = key_data
     hwids[key] = hwid
 
     save_keys(keys)
     save_hwids(hwids)
-
     return True, "Key activated successfully"
 
 # ---------------- Routes ----------------
@@ -81,7 +82,7 @@ def activate():
     else:
         return jsonify({"error": message}), 400
 
-# ---------------- Admin Endpoint to Add Keys ----------------
+# ---------------- Admin: Add Keys ----------------
 @app.route("/add_key", methods=["POST"])
 def add_key():
     data = request.get_json()
@@ -94,11 +95,12 @@ def add_key():
     if key in keys:
         return jsonify({"error": "Key already exists"}), 400
 
-    # NEW: Add expiration if temporary
-    if data.get("temporary"):
+    # Only treat as temporary if field exists and is True
+    if data.get("temporary") == True:
         expires = int(time.time()) + 1800  # 30 min
         keys[key] = {"status": "unused", "expires": expires}
     else:
+        # Infinite key
         keys[key] = {"status": "unused", "expires": None}
 
     save_keys(keys)
