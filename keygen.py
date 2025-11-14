@@ -14,11 +14,17 @@ def generate_key():
     return '-'.join(parts)
 
 def add_key_to_server(key, temporary=False):
-    """Send the key to your server to register it as unused or a temp key"""
+    # Build JSON data
+    data = {"key": key}
+
+    # Only include "temporary" if TRUE to avoid Render 502 bug
+    if temporary:
+        data["temporary"] = True
+
     try:
         resp = requests.post(
             SERVER + "/add_key",
-            json={"key": key, "temporary": temporary},
+            json=data,
             timeout=10
         )
         if resp.status_code == 200:
