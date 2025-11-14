@@ -13,10 +13,14 @@ def generate_key():
         parts.append(part)
     return '-'.join(parts)
 
-def add_key_to_server(key):
-    """Send the key to your server to register it as unused"""
+def add_key_to_server(key, temporary=False):
+    """Send the key to your server to register it as unused or a temp key"""
     try:
-        resp = requests.post(SERVER + "/add_key", json={"key": key}, timeout=10)
+        resp = requests.post(
+            SERVER + "/add_key",
+            json={"key": key, "temporary": temporary},
+            timeout=10
+        )
         if resp.status_code == 200:
             print(f"[SUCCESS] Key added: {key}")
         else:
@@ -26,6 +30,8 @@ def add_key_to_server(key):
 
 if __name__ == "__main__":
     num_keys = int(input("How many keys to generate? "))
+    temp = input("Temporary 30-minute keys? (y/n): ").lower() == "y"
+
     for _ in range(num_keys):
         key = generate_key()
-        add_key_to_server(key)
+        add_key_to_server(key, temporary=temp)
