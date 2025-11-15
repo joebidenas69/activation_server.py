@@ -1,81 +1,102 @@
 from flask import Flask, request, jsonify
-import json
-import time
-import uuid
-import os
-
-DB_FILE = "keys.json"
+import json, os, time
 
 app = Flask(__name__)
 
-# Load or create database
-if not os.path.exists(DB_FILE):
-    with open(DB_FILE, "w") as f:
-        json.dump({"keys": {}}, f)
+KEYS_FILE = "keys.json"
+HWID_FILE = "hwids.json"
 
-def load_db():
-    with open(DB_FILE, "r") as f:
-        return json.load(f)
+def load_keys():
+    if os.path.exists(KEYS_FILE):
+        with open(KEYS_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
-def save_db(db):
-    with open(DB_FILE, "w") as f:
-        json.dump(db, f, indent=2)
+def save_keys(keys):
+    with open(KEYS_FILE, "w") as f:
+        json.dump(keys, f, indent=4)
 
+def load_hwids():
+    if os.path.exists(HWID_FILE):
+        with open(HWID_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
-@app.post("/activate")
+def save_hwids(hwids):
+    with open(HWID_FILE, "w") as f:
+        json.dump(hwids, f, indent=4)
+
+def is_key_valid(key, hwid):
+    keys = load_keys()
+    hwids = load_hwids()
+
+    if key not in keys:
+        return False, "Key does not exist"
+
+    data = keys[key]
+
+    # ------------- Check expiration -------------
+    if data["expires_after_activation"] > 0:  
+        # key has time limit
+        if data["activated_at"] != 0:
+            # key has been activated before
+            if time.time() > data["activated_at"] + data["expires_after_activation"]:
+                return False, "Key expired"
+
+    # ------------- Check if already used -------------
+    if data["activated"] == True:
+        return False, "Key already used"
+
+    # ------------- Bind HWID -------------
+    if key in hwids:
+        return False, "Key already activated on another machine"
+
+    # Mark activation time
+    data["activated"] = True
+    data["activated_at"] = time.time()
+
+    hwids[key] = hwid
+    save_keys(keys)
+    save_hwids(hwids)
+
+    return True, "Key activated successfully"
+
+@app.route("/activate", methods=["POST"])
 def activate():
-    db = load_db()
-    req = request.get_json()
+    data = request.get_json()
+    if not data or "key" not in data or "hwid" not in data:
+        return jsonify({"error": "Missing key or hwid"}), 400
 
-    key = req.get("key")
-    hwid = req.get("hwid")
+    key = data["key"].strip()
+    hwid = data["hwid"].strip()
 
-    if key not in db["keys"]:
-        return jsonify({"success": False, "error": "Invalid key"}), 400
+    valid, msg = is_key_valid(key, hwid)
 
-    k = db["keys"][key]
+    if valid:
+        return jsonify({"success": True, "message": msg})
+    return jsonify({"error": msg}), 400
 
-    # Infinite key → unlimited activations
-    if k["type"] == "infinite":
-        return jsonify({"success": True, "message": "Infinite key activated"}), 200
+@app.route("/add_key", methods=["POST"])
+def add_key():
+    data = request.get_json()
+    if "key" not in data:
+        return jsonify({"error": "Missing key"}), 400
 
-    # Normal key
-    if k["used"]:
-        return jsonify({"success": False, "error": "Key already used"}), 400
+    key = data["key"].strip()
+    expires = data.get("expires", 0)   # 0 = infinite key
 
-    # Bind HWID
-    k["used"] = True
-    k["hwid"] = hwid
-    k["activated_at"] = time.time()
+    keys = load_keys()
+    if key in keys:
+        return jsonify({"error": "Key already exists"}), 400
 
-    save_db(db)
-    return jsonify({"success": True, "message": "Key activated"}), 200
+    keys[key] = {
+        "activated": False,
+        "activated_at": 0,                 # when key gets activated
+        "expires_after_activation": expires # 0 = infinite
+    }
 
-
-@app.post("/validate")
-def validate():
-    db = load_db()
-    req = request.get_json()
-
-    key = req.get("key")
-    hwid = req.get("hwid")
-
-    if key not in db["keys"]:
-        return jsonify({"success": False, "error": "Invalid key"}), 400
-
-    k = db["keys"][key]
-
-    if k["type"] == "infinite":
-        return jsonify({"success": True}), 200
-
-    if not k["used"]:
-        return jsonify({"success": False, "error": "Key not activated yet"}), 400
-
-    if k["hwid"] != hwid:
-        return jsonify({"success": False, "error": "Wrong device"}), 400
-
-    return jsonify({"success": True}), 200
-
+    save_keys(keys)
+    return jsonify({"success": True, "message": f"Key {key} added"}), 200
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(host="0.0.0.0", port=10000)
