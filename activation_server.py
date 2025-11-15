@@ -3,7 +3,6 @@ import json
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
-
 KEYS_FILE = "keys.json"
 
 # Create keys.json if it doesn't exist
@@ -48,6 +47,7 @@ def activate():
         if key_info.get("used", False):
             return jsonify({"error": "Key already used"}), 400
 
+        # Mark temp key as used
         key_info["used"] = True
         key_info["hwid"] = hwid
         with open(KEYS_FILE, "w") as f:
@@ -55,7 +55,7 @@ def activate():
         return jsonify({"success": True, "type": "temp"}), 200
 
     if key_info["type"] == "infinite":
-        # Infinite keys never get marked used
+        # Infinite keys are always reusable
         return jsonify({"success": True, "type": "infinite"}), 200
 
 if __name__ == "__main__":
