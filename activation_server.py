@@ -1,15 +1,19 @@
-from flask import Flask, request, jsonify
+import os
 import json
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Load keys from file (ensure keys.json exists)
 KEYS_FILE = "keys.json"
-try:
-    with open(KEYS_FILE, "r") as f:
-        keys = json.load(f)
-except:
-    keys = {}
+
+# Create keys.json if it doesn't exist
+if not os.path.exists(KEYS_FILE):
+    with open(KEYS_FILE, "w") as f:
+        json.dump({}, f, indent=4)
+
+# Load keys
+with open(KEYS_FILE, "r") as f:
+    keys = json.load(f)
 
 @app.route("/add_key", methods=["POST"])
 def add_key():
@@ -51,7 +55,7 @@ def activate():
         return jsonify({"success": True, "type": "temp"}), 200
 
     if key_info["type"] == "infinite":
-        # Infinite keys are reusable
+        # Infinite keys never get marked used
         return jsonify({"success": True, "type": "infinite"}), 200
 
 if __name__ == "__main__":
