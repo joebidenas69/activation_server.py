@@ -35,23 +35,21 @@ def is_key_valid(key, hwid):
 
     data = keys[key]
 
-    # ------------- Check expiration -------------
-    if data["expires_after_activation"] > 0:  
-        # key has time limit
+    # Check expiration
+    if data["expires_after_activation"] > 0:
         if data["activated_at"] != 0:
-            # key has been activated before
             if time.time() > data["activated_at"] + data["expires_after_activation"]:
                 return False, "Key expired"
 
-    # ------------- Check if already used -------------
+    # Check if already used
     if data["activated"] == True:
         return False, "Key already used"
 
-    # ------------- Bind HWID -------------
+    # Check HWID
     if key in hwids:
         return False, "Key already activated on another machine"
 
-    # Mark activation time
+    # Mark as activated
     data["activated"] = True
     data["activated_at"] = time.time()
 
@@ -71,9 +69,13 @@ def activate():
     hwid = data["hwid"].strip()
 
     valid, msg = is_key_valid(key, hwid)
-
     if valid:
-        return jsonify({"success": True, "message": msg})
+        keys = load_keys()
+        return jsonify({
+            "success": True,
+            "message": msg,
+            "expires_after_activation": keys[key]["expires_after_activation"]
+        })
     return jsonify({"error": msg}), 400
 
 @app.route("/add_key", methods=["POST"])
@@ -83,7 +85,7 @@ def add_key():
         return jsonify({"error": "Missing key"}), 400
 
     key = data["key"].strip()
-    expires = data.get("expires", 0)   # 0 = infinite key
+    expires = data.get("expires", 0)  # 0 = infinite
 
     keys = load_keys()
     if key in keys:
@@ -91,8 +93,8 @@ def add_key():
 
     keys[key] = {
         "activated": False,
-        "activated_at": 0,                 # when key gets activated
-        "expires_after_activation": expires # 0 = infinite
+        "activated_at": 0,
+        "expires_after_activation": expires
     }
 
     save_keys(keys)
