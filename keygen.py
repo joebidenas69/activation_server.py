@@ -1,43 +1,44 @@
-import random
-import string
-import requests
+import json
+import uuid
+import os
 
-# Replace with your server URL
-SERVER = "https://activation-server-py-1.onrender.com"
+DB_FILE = "keys.json"
 
-def generate_key():
-    """Generate a random key like ABCD-1234-EFGH-5678"""
-    parts = []
-    for _ in range(4):
-        part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
-        parts.append(part)
-    return '-'.join(parts)
+if not os.path.exists(DB_FILE):
+    with open(DB_FILE, "w") as f:
+        json.dump({"keys": {}}, f)
 
-def add_key_to_server(key, temporary=False):
-    # Build JSON data
-    data = {"key": key}
+def load_db():
+    with open(DB_FILE, "r") as f:
+        return json.load(f)
 
-    # Only include "temporary" if TRUE to avoid Render 502 bug
-    if temporary:
-        data["temporary"] = True
+def save_db(db):
+    with open(DB_FILE, "w") as f:
+        json.dump(db, f, indent=2)
 
-    try:
-        resp = requests.post(
-            SERVER + "/add_key",
-            json=data,
-            timeout=10
-        )
-        if resp.status_code == 200:
-            print(f"[SUCCESS] Key added: {key}")
-        else:
-            print(f"[ERROR] Could not add key: {key}, reason: {resp.text}")
-    except Exception as e:
-        print(f"[ERROR] Server request failed: {e}")
+
+def generate_key(type="normal"):
+    db = load_db()
+
+    key = str(uuid.uuid4()).upper()
+
+    db["keys"][key] = {
+        "type": type,       # "normal" or "infinite"
+        "used": False,
+        "hwid": None,
+        "activated_at": None
+    }
+
+    save_db(db)
+    return key
+
 
 if __name__ == "__main__":
-    num_keys = int(input("How many keys to generate? "))
-    temp = input("Temporary 30-minute keys? (y/n): ").lower() == "y"
+    print("1. Normal key")
+    print("2. Infinite key")
+    ch = input("> ")
 
-    for _ in range(num_keys):
-        key = generate_key()
-        add_key_to_server(key, temporary=temp)
+    if ch == "1":
+        print("Normal key:", generate_key("normal"))
+    else:
+        print("Infinite key:", generate_key("infinite"))
