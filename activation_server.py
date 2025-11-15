@@ -1,104 +1,35 @@
-from flask import Flask, request, jsonify
-import json, os, time
-
-app = Flask(__name__)
-
-KEYS_FILE = "keys.json"
-HWID_FILE = "hwids.json"
-
-def load_keys():
-    if os.path.exists(KEYS_FILE):
-        with open(KEYS_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_keys(keys):
-    with open(KEYS_FILE, "w") as f:
-        json.dump(keys, f, indent=4)
-
-def load_hwids():
-    if os.path.exists(HWID_FILE):
-        with open(HWID_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_hwids(hwids):
-    with open(HWID_FILE, "w") as f:
-        json.dump(hwids, f, indent=4)
-
-def is_key_valid(key, hwid):
-    keys = load_keys()
-    hwids = load_hwids()
-
-    if key not in keys:
-        return False, "Key does not exist"
-
-    data = keys[key]
-
-    # Check expiration
-    if data["expires_after_activation"] > 0:
-        if data["activated_at"] != 0:
-            if time.time() > data["activated_at"] + data["expires_after_activation"]:
-                return False, "Key expired"
-
-    # Check if already used
-    if data["activated"] == True:
-        return False, "Key already used"
-
-    # Check HWID
-    if key in hwids:
-        return False, "Key already activated on another machine"
-
-    # Mark as activated
-    data["activated"] = True
-    data["activated_at"] = time.time()
-
-    hwids[key] = hwid
-    save_keys(keys)
-    save_hwids(hwids)
-
-    return True, "Key activated successfully"
-
 @app.route("/activate", methods=["POST"])
 def activate():
     data = request.get_json()
-    if not data or "key" not in data or "hwid" not in data:
+    key = data.get("key")
+    hwid = data.get("hwid")
+
+    if not key or not hwid:
         return jsonify({"error": "Missing key or hwid"}), 400
 
-    key = data["key"].strip()
-    hwid = data["hwid"].strip()
+    with open("keys.json", "r") as f:
+        keys = json.load(f)
 
-    valid, msg = is_key_valid(key, hwid)
-    if valid:
-        keys = load_keys()
-        return jsonify({
-            "success": True,
-            "message": msg,
-            "expires_after_activation": keys[key]["expires_after_activation"]
-        })
-    return jsonify({"error": msg}), 400
+    if key not in keys:
+        return jsonify({"error": "Invalid key"}), 400
 
-@app.route("/add_key", methods=["POST"])
-def add_key():
-    data = request.get_json()
-    if "key" not in data:
-        return jsonify({"error": "Missing key"}), 400
+    key_info = keys[key]
 
-    key = data["key"].strip()
-    expires = data.get("expires", 0)  # 0 = infinite
+    # TEMPORARY KEY (single-use)
+    if key_info["type"] == "temp":
+        if key_info.get("used", False):
+            return jsonify({"error": "Key already used"}), 400
 
-    keys = load_keys()
-    if key in keys:
-        return jsonify({"error": "Key already exists"}), 400
+        # Mark temp key as used
+        key_info["used"] = True
+        key_info["hwid"] = hwid
 
-    keys[key] = {
-        "activated": False,
-        "activated_at": 0,
-        "expires_after_activation": expires
-    }
+        with open("keys.json", "w") as f:
+            json.dump(keys, f, indent=4)
 
-    save_keys(keys)
-    return jsonify({"success": True, "message": f"Key {key} added"}), 200
+        return jsonify({"success": True, "type": "temp"}), 200
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    # INFINITE KEY (reusable)
+    if key_info["type"] == "infinite":
+        # Do NOT mark as used
+        return jsonify({"success": True, "type": "infinite"}), 200
