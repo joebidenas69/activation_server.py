@@ -1,9 +1,11 @@
 import os
 import json
+import time
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 KEYS_FILE = "keys.json"
+TEMP_KEY_DURATION = 3600  # 60 minutes in seconds
 
 # Create keys.json if it doesn't exist
 if not os.path.exists(KEYS_FILE):
@@ -14,6 +16,7 @@ if not os.path.exists(KEYS_FILE):
 with open(KEYS_FILE, "r") as f:
     keys = json.load(f)
 
+# ---------------- Routes ----------------
 @app.route("/add_key", methods=["POST"])
 def add_key():
     data = request.get_json()
@@ -23,7 +26,13 @@ def add_key():
     if not key:
         return jsonify({"error": "Missing key"}), 400
 
-    keys[key] = {"type": key_type, "used": False}
+    if key_type == "temp":
+        # Set expiry timestamp 60 minutes from now
+        expiry = int(time.time()) + TEMP_KEY_DURATION
+        keys[key] = {"type": "temp", "used": False, "expiry": expiry}
+    else:
+        keys[key] = {"type": "infinite", "used": False}
+
     with open(KEYS_FILE, "w") as f:
         json.dump(keys, f, indent=4)
 
@@ -44,15 +53,22 @@ def activate():
     key_info = keys[key]
 
     if key_info["type"] == "temp":
-        if key_info.get("used", False):
+        current_time = int(time.time())
+        expiry = key_info.get("expiry", 0)
+
+        if current_time > expiry:
+            return jsonify({"error": "Key expired"}), 400
+
+        if key_info.get("used", False) and key_info.get("hwid") != hwid:
             return jsonify({"error": "Key already used"}), 400
 
-        # Mark temp key as used
+        # Mark temp key as used for this HWID
         key_info["used"] = True
         key_info["hwid"] = hwid
         with open(KEYS_FILE, "w") as f:
             json.dump(keys, f, indent=4)
-        return jsonify({"success": True, "type": "temp"}), 200
+
+        return jsonify({"success": True, "type": "temp", "expiry": expiry}), 200
 
     if key_info["type"] == "infinite":
         # Infinite keys are always reusable
