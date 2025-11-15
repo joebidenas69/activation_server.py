@@ -1,44 +1,30 @@
-import json
-import uuid
-import os
+import random, string, requests
 
-DB_FILE = "keys.json"
+SERVER = "https://activation-server-py-1.onrender.com"
 
-if not os.path.exists(DB_FILE):
-    with open(DB_FILE, "w") as f:
-        json.dump({"keys": {}}, f)
+def generate_key():
+    parts = []
+    for _ in range(4):
+        part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        parts.append(part)
+    return '-'.join(parts)
 
-def load_db():
-    with open(DB_FILE, "r") as f:
-        return json.load(f)
-
-def save_db(db):
-    with open(DB_FILE, "w") as f:
-        json.dump(db, f, indent=2)
-
-
-def generate_key(type="normal"):
-    db = load_db()
-
-    key = str(uuid.uuid4()).upper()
-
-    db["keys"][key] = {
-        "type": type,       # "normal" or "infinite"
-        "used": False,
-        "hwid": None,
-        "activated_at": None
-    }
-
-    save_db(db)
-    return key
-
+def add_key_to_server(key, expires):
+    try:
+        resp = requests.post(
+            SERVER + "/add_key",
+            json={"key": key, "expires": expires},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            print(f"[SUCCESS] Key added: {key}")
+        else:
+            print(f"[ERROR] Could not add key: {key}, reason: {resp.text}")
+    except Exception as e:
+        print(f"[ERROR] Server request failed: {e}")
 
 if __name__ == "__main__":
-    print("1. Normal key")
-    print("2. Infinite key")
-    ch = input("> ")
-
-    if ch == "1":
-        print("Normal key:", generate_key("normal"))
-    else:
-        print("Infinite key:", generate_key("infinite"))
+    t = input("30 min key? (y/n): ").strip().lower()
+    expires = 1800 if t == "y" else 0
+    key = generate_key()
+    add_key_to_server(key, expires)
